@@ -6,53 +6,51 @@ from Bio import SeqIO
 from Bio.Seq import Seq
 import pandas as pd
 import tqdm
+import itertools
 
 def reverse_complement(seq):
     return str(Seq(seq).reverse_complement())
 
-def find_sequence(sequence, flank_left, flank_right):
-    left_index = sequence.find(flank_left)
-    right_index = sequence.find(flank_right, left_index + 1)
-    if left_index != -1 and right_index != -1:
-        return sequence[left_index + len(flank_left):right_index]
+def find_sequence(sequence, flanks_left, flanks_right):
+    flank_combos = list(itertools.product(flanks_left,flanks_right))
+    for flank_combo in flank_combos:
+        left_index = sequence.find(flank_combo[0])
+        right_index = sequence.find(flank_combo[1], left_index + 1)
+        if left_index != -1 and right_index != -1:
+            return sequence[left_index + len(flank_combo[0]):right_index]
     return None
 
-def process_fastq(file, attb_flank_left, attb_flank_right,attp_flank_left, attp_flank_right):
-    attb_flank_left = attb_flank_left.upper()
-    attb_flank_right = attb_flank_right.upper()
-    attb_flank_left_rc = reverse_complement(attb_flank_left)
-    attb_flank_right_rc = reverse_complement(attb_flank_right)
+def process_fastq(file, attb_flanks_left, attb_flanks_right,attp_flanks_left, attp_flanks_right):
+    attb_flanks_left_rc = [reverse_complement(i) for i in attb_flanks_left]
+    attb_flanks_right_rc = [reverse_complement(i) for i in attb_flanks_right]
 
-    attp_flank_left = attp_flank_left.upper()
-    attp_flank_right = attp_flank_right.upper()
-    attp_flank_left_rc = reverse_complement(attp_flank_left)
-    attp_flank_right_rc = reverse_complement(attp_flank_right)
+    attp_flanks_left_rc = [reverse_complement(i) for i in attp_flanks_left]
+    attp_flanks_right_rc = [reverse_complement(i) for i in attp_flanks_right]
 
     sequences = {}
     with gzip.open(file, "rt") as handle:
         for record in tqdm.tqdm(SeqIO.parse(handle, "fastq")):
             sequence = str(record.seq)
-            target_seq = find_sequence(sequence, attb_flank_left, attb_flank_right)
+            target_seq = find_sequence(sequence, attb_flanks_left, attb_flanks_right)
             if not target_seq:
-                target_seq = find_sequence(sequence, attb_flank_right_rc, attb_flank_left_rc)
+                target_seq = find_sequence(sequence, attb_flanks_right_rc, attb_flanks_left_rc)
                 if target_seq:
                     target_seq = reverse_complement(target_seq)
             if not target_seq:
-                target_seq = find_sequence(sequence, attb_flank_left, attp_flank_right)
+                target_seq = find_sequence(sequence, attb_flanks_left, attp_flanks_right)
                 if not target_seq:
-                    target_seq = find_sequence(sequence, attp_flank_right_rc, attb_flank_left_rc)
+                    target_seq = find_sequence(sequence, attp_flanks_right_rc, attb_flanks_left_rc)
                     if target_seq:
                         target_seq = reverse_complement(target_seq)
             if not target_seq:
-                target_seq = find_sequence(sequence, attp_flank_left, attb_flank_right)
+                target_seq = find_sequence(sequence, attp_flanks_left, attb_flanks_right)
                 if not target_seq:
-                    target_seq = find_sequence(sequence, attb_flank_right_rc, attp_flank_left_rc)
+                    target_seq = find_sequence(sequence, attb_flanks_right_rc, attp_flanks_left_rc)
                     if target_seq:
                         target_seq = reverse_complement(target_seq)
             if target_seq:
                 sequences[target_seq] = sequences.get(target_seq, 0) + 1
     return sequences
-
 
 def cross_reference_amplicons(sequences, amplicons_file):
     amplicons = pd.read_csv(amplicons_file, sep="\t", names=["name", "sequence"])
@@ -64,11 +62,9 @@ def calculate_recombination_percentage(amplicons, sample_name):
     recombination_data = []
     for index in amplicons['name'].str.extract(r'_(\d+)')[0].unique():
         subset = amplicons[amplicons['name'].apply(lambda x: x.count('_') <= 1) & amplicons['name'].str.contains(f'_{index}$')]
-        print(subset)
         attL_count = subset[subset['name'].str.contains('attL')]['count'].sum()
         attR_count = subset[subset['name'].str.contains('attR')]['count'].sum()
         attB_count = subset[subset['name'].str.contains('attB')]['count'].sum()
-        print(subset[subset['name'].str.contains('attB')]['sequence'])
         attB_sequence = subset[subset['name'].str.contains('attB')]['sequence'].reset_index(drop=True).iloc[0]
         max_l_r = max(attL_count, attR_count)
         recombination_percentage = 100 * max_l_r / (max_l_r + attB_count) if (max_l_r + attB_count) != 0 else 0
@@ -90,10 +86,10 @@ def calculate_recombination_percentage(amplicons, sample_name):
 def main():
     parser = argparse.ArgumentParser(description="Process FASTQ file and calculate recombination percentages.")
     parser.add_argument("--fastq_file", help="Path to the .fastq.gz file")
-    parser.add_argument("--attb_flank_left", help="Left flanking sequence (12 bp)")
-    parser.add_argument("--attb_flank_right", help="Right flanking sequence (12 bp)")
-    parser.add_argument("--attp_flank_left", help="Left flanking sequence (12 bp)")
-    parser.add_argument("--attp_flank_right", help="Right flanking sequence (12 bp)")
+    parser.add_argument("--attb_flank_left", help="Left flanking sequence (12 bp)",type=lambda t: [s.strip() for s in t.split(',')])
+    parser.add_argument("--attb_flank_right", help="Right flanking sequence (12 bp)",type=lambda t: [s.strip() for s in t.split(',')])
+    parser.add_argument("--attp_flank_left", help="Left flanking sequence (12 bp)",type=lambda t: [s.strip() for s in t.split(',')])
+    parser.add_argument("--attp_flank_right", help="Right flanking sequence (12 bp)",type=lambda t: [s.strip() for s in t.split(',')])
     parser.add_argument("--amplicons_file", help="Path to the amplicons.txt file")
     parser.add_argument("--sample_name", help="sample name")
     args = parser.parse_args()

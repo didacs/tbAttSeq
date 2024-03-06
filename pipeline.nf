@@ -1,27 +1,17 @@
 nextflow.enable.dsl=2
 
-params.R1 = ''
-params.R2 = ''
-params.attb_list = ''
+params.samplesheet = '' // Assuming you have this parameter to specify the path to the samplesheet
 params.attp_oligo = ''
-params.sample_name = ''
 params.method = 'cs2'
-
-params.attb_flank_left = ''
-params.attb_flank_right = ''
-params.attp_flank_left = ''
-params.attp_flank_right = ''
-
+params.outdir = 'results' // Assuming an output directory parameter
 
 process ADAPTER_AND_POLY_G_TRIM {
     cache 'lenient'
 
     input:
-        tuple path(R1), path(R2)
-        val sample_name
+        tuple val(sample_name), path(R1), path(R2), path(oligos), val(group)
     output:
-        path "${sample_name}_trimmed.fastq.gz", emit: trimmed_fastq_reads
-        val sample_name
+        tuple val(sample_name), path("${sample_name}_trimmed.fastq.gz")
 
     script:
         """
@@ -33,113 +23,79 @@ process CREATE_AMPLICONS {
     cache 'lenient'    
 
     input:
-        path attb_list
-        path attp_oligo
-        val method
-        val sample_name
+        tuple val(sample_name), path(R1), path(R2), path(oligos), val(group)
+        val(method)
     output:
-        path "${sample_name}_amplicons.txt", emit: amplicons
+        path("${sample_name}_amplicons.txt")
 
     script:
-
-    """
-    create_amplicon_files.py --attb_list ${attb_list} --attp ${attp_oligo} --output ${sample_name}_amplicons.txt --method ${method}
-    """  
+        """
+        create_amplicon_files.py --attb_list ${oligos} --attp ${params.attp_oligo} --output ${sample_name}_amplicons.txt --method ${method}
+        """  
 }
 
 process CS2_POOLED {
-
     input:
-        path merged_reads
-        path amplicons
-        val sample_name
+        tuple val(sample_name), path(merged_reads)
+        path(amplicons)
 
     output:
+        // Assuming there's an output you want to emit, add here
 
     script:
-
-    """
-    CRISPRessoPooled -r1 ${merged_reads} -f ${amplicons} --min_reads_to_use_region 1  -p 8 -o ./ -n ${sample_name} --write_detailed_allele_table --bam_output --place_report_in_output_folder --suppress_report --suppress_plots --limit_open_files_for_demux
-    """
-
+        """
+        CRISPRessoPooled -r1 ${merged_reads} -f ${amplicons} --min_reads_to_use_region 1  -p 8 -o ./ -n ${sample_name} --write_detailed_allele_table --bam_output --place_report_in_output_folder --suppress_report --suppress_plots --limit_open_files_for_demux
+        """
 }
 
 process DIRECT_SEARCH {
-    publishDir "${params.outdir}/${sample_name}/"
+    publishDir "${params.outdir}/${sample_name}", mode: 'copy'
     input:
-        path merged_reads
-        val attb_left_flank
-        val attb_right_flank
-        val attp_left_flank
-        val attp_right_flank    
-        path amplicons
-        val sample_name
+        tuple val(sample_name), path(merged_reads)
+        val(attb_left_flank)
+        val(attb_right_flank)
+        val(attp_left_flank)
+        val(attp_right_flank)    
+        path(amplicons)
     output:
         path("${sample_name}_recombination_data.csv")
-        val sample_name
+
     script:
-    """
-    direct_search.py --fastq_file ${merged_reads} --attb_flank_left ${attb_left_flank} --attb_flank_right ${attb_right_flank} --attp_flank_left ${attp_left_flank} --attp_flank_right ${attp_right_flank} --amplicons_file ${amplicons} --sample_name ${sample_name}
-    """
+        """
+        direct_search.py --fastq_file ${merged_reads} --attb_flank_left ${attb_left_flank} --attb_flank_right ${attb_right_flank} --attp_flank_left ${attp_left_flank} --attp_flank_right ${attp_right_flank} --amplicons_file ${amplicons} --sample_name ${sample_name}
+        """
 }
 
-
 workflow {
+    // Create a channel for the input sample sheet
+    Channel.fromPath(params.samplesheet)
+        .splitCsv(header: true, sep: ',')
+        .map { row ->
+            def r1 = "${launchDir}/${row.fastq_dir}/*R1*.fastq.gz"
+            def r2 = "${launchDir}/${row.fastq_dir}/*R2*.fastq.gz"
+            def oligos = "${launchDir}/${row.oligos}"
+            
+            tuple(row.sample_name, file(r1), file(r2), file(oligos), row.group)
+        }
+        .set { combined_ch }
     
-    Channel.fromPath(params.samplesheet)
-    .splitCsv(header: true, sep: ',')
-    .map { row -> 
-        row.sample_name  // Emit only the sample_name
-    }
-    .set { samplename_ch }
+    
+    trimmed_reads = ADAPTER_AND_POLY_G_TRIM(combined_ch)
 
-    Channel.fromPath(params.samplesheet)
-    .splitCsv(header: true, sep: ',')
-    .map { row -> 
-        def r1 = "${launchDir}/${row.fastq_dir}/*R1*.fastq.gz"
-        def r2 = "${launchDir}/${row.fastq_dir}/*R2*.fastq.gz"
-        tuple(
-            file(r1), 
-            file(r2), 
-        )
-    }
-    .set { reads_ch }
+    amplicons = CREATE_AMPLICONS(combined_ch, params.method)
 
-    Channel.fromPath(params.samplesheet)
-    .splitCsv(header: true, sep: ',')
-    .map { row -> 
-        def oligos = "${launchDir}/${row.oligos}"
-        file(oligos)
-    }
-    .set { oligos_ch }
-
-    Channel.fromPath(params.samplesheet)
-    .splitCsv(header: true, sep: ',')
-    .map { row -> 
-        row.group 
-    }
-    .set { group_ch }
-
-    trimmed_reads = ADAPTER_AND_POLY_G_TRIM(reads_ch, samplename_ch)
-    if (params.method == 'cs2'){
-        amplicons = CREATE_AMPLICONS(oligos_ch,params.attp_oligo,params.method,samplename_ch)
-        cs2_output = CS2_POOLED(trimmed_reads.trimmed_fastq_reads, amplicons.amplicons,samplename_ch)
+    if (params.method == 'cs2') {
+        CS2_POOLED(amplicons.amplicons, amplicons)
     } else {
-        amplicons = CREATE_AMPLICONS(oligos_ch,params.attp_oligo,params.method,samplename_ch)
-        output = DIRECT_SEARCH(trimmed_reads.trimmed_fastq_reads, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right, amplicons.amplicons,samplename_ch)
+        DIRECT_SEARCH(trimmed_reads, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right, amplicons)
     }
 }
 
 workflow.onComplete {
-
-    def msg = """\
-        Pipeline execution summary
-        ---------------------------
-        Completed at: ${workflow.complete}
-        Duration    : ${workflow.duration}
-        Success     : ${workflow.success}
-        workDir     : ${workflow.workDir}
-        exit status : ${workflow.exitStatus}
-        """
-        .stripIndent()
+    println "Pipeline execution summary:"
+    println "Completed at: ${workflow.complete}"
+    println "Duration    : ${workflow.duration}"
+    println "Success     : ${workflow.success}"
+    println "workDir     : ${workflow.workDir}"
+    println "exit status : ${workflow.exitStatus}"
 }
