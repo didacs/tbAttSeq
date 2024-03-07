@@ -34,19 +34,19 @@ process CREATE_AMPLICONS {
         """  
 }
 
-process CS2_POOLED {
-    input:
-        tuple val(sample_name), path(merged_reads)
-        path(amplicons)
+// process CS2_POOLED {
+//     input:
+//         tuple val(sample_name), path(merged_reads)
+//         path(amplicons)
 
-    output:
-        // Assuming there's an output you want to emit, add here
+//     output:
+//         // Assuming there's an output you want to emit, add here
 
-    script:
-        """
-        CRISPRessoPooled -r1 ${merged_reads} -f ${amplicons} --min_reads_to_use_region 1  -p 8 -o ./ -n ${sample_name} --write_detailed_allele_table --bam_output --place_report_in_output_folder --suppress_report --suppress_plots --limit_open_files_for_demux
-        """
-}
+//     script:
+//         """
+//         CRISPRessoPooled -r1 ${merged_reads} -f ${amplicons} --min_reads_to_use_region 1  -p 8 -o ./ -n ${sample_name} --write_detailed_allele_table --bam_output --place_report_in_output_folder --suppress_report --suppress_plots --limit_open_files_for_demux
+//         """
+// }
 
 process DIRECT_SEARCH {
     publishDir "${params.outdir}/${sample_name}", mode: 'copy'
@@ -84,11 +84,13 @@ workflow {
 
     amplicons = CREATE_AMPLICONS(combined_ch, params.method)
 
-    if (params.method == 'cs2') {
-        CS2_POOLED(amplicons.amplicons, amplicons)
-    } else {
-        DIRECT_SEARCH(trimmed_reads, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right, amplicons)
-    }
+    DIRECT_SEARCH(trimmed_reads, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right, amplicons)
+
+    // if (params.method == 'cs2') {
+    //     CS2_POOLED(amplicons.amplicons, amplicons)
+    // } else {
+    //     DIRECT_SEARCH(trimmed_reads, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right, amplicons)
+    // }
 }
 
 workflow.onComplete {
