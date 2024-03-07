@@ -20,7 +20,7 @@ process ADAPTER_AND_POLY_G_TRIM {
 }
 
 process CREATE_AMPLICONS {
-    cache 'lenient'    
+    cache 'lenient'
 
     input:
         tuple val(sample_name), path(R1), path(R2), path(oligos), val(group)
@@ -31,7 +31,7 @@ process CREATE_AMPLICONS {
     script:
         """
         create_amplicon_files.py --attb_list ${oligos} --attp ${params.attp_oligo} --output ${sample_name}_amplicons.txt --method ${method}
-        """  
+        """
 }
 
 // process CS2_POOLED {
@@ -55,7 +55,7 @@ process DIRECT_SEARCH {
         val(attb_left_flank)
         val(attb_right_flank)
         val(attp_left_flank)
-        val(attp_right_flank)    
+        val(attp_right_flank)
     output:
         path("${sample_name}_recombination_data.csv")
 
@@ -73,12 +73,12 @@ workflow {
             def r1 = "${launchDir}/${row.fastq_dir}/*R1*.fastq.gz"
             def r2 = "${launchDir}/${row.fastq_dir}/*R2*.fastq.gz"
             def oligos = "${launchDir}/${row.oligos}"
-            
+
             tuple(row.sample_name, file(r1), file(r2), file(oligos), row.group)
         }
         .set { combined_ch }
-    
-    
+
+
     trimmed_reads = ADAPTER_AND_POLY_G_TRIM(combined_ch)
 
     amplicons = CREATE_AMPLICONS(combined_ch, params.method)
