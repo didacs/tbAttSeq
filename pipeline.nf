@@ -5,22 +5,33 @@ params.attp_oligo = ''
 params.method = 'cs2'
 params.outdir = 'results' // Assuming an output directory parameter
 
-process TRIM_AND_CREATE_AMPLICONS {
+process ADAPTER_AND_POLY_G_TRIM {
     cache 'lenient'
+
+    input:
+        tuple val(sample_name), path(R1), path(R2), path(oligos), val(group)
+    output:
+        tuple val(sample_name), path("${sample_name}_trimmed.fastq.gz")
+
+    script:
+        """
+        fastp -m -c --include_unmerged --dont_eval_duplication --low_complexity_filter --overlap_len_require 10 -i ${R1} -I ${R2} --merged_out ${sample_name}_trimmed.fastq.gz -w 16 -g -j ${sample_name}_fastp.json
+        """
+}
+
+process CREATE_AMPLICONS {
+    cache 'lenient'    
 
     input:
         tuple val(sample_name), path(R1), path(R2), path(oligos), val(group)
         val(method)
     output:
-        tuple val(sample_name), path("${sample_name}_trimmed.fastq.gz"), path("${sample_name}_amplicons.txt")
+        tuple val(sample_name), path("${sample_name}_amplicons.txt")
 
     script:
         """
-        fastp -m -c --include_unmerged --dont_eval_duplication --low_complexity_filter \
-            --overlap_len_require 10 -i ${R1} -I ${R2} \
-            --merged_out ${sample_name}_trimmed.fastq.gz -w 16 -g -j ${sample_name}_fastp.json
         create_amplicon_files.py --attb_list ${oligos} --attp ${params.attp_oligo} --output ${sample_name}_amplicons.txt --method ${method}
-        """
+        """  
 }
 
 // process CS2_POOLED {
@@ -41,11 +52,10 @@ process DIRECT_SEARCH {
     publishDir "${params.outdir}/${sample_name}", mode: 'copy'
     input:
         tuple val(sample_name), path(merged_reads), path(amplicons)
-
         val(attb_left_flank)
         val(attb_right_flank)
         val(attp_left_flank)
-        val(attp_right_flank)
+        val(attp_right_flank)    
     output:
         path("${sample_name}_recombination_data.csv")
 
@@ -63,12 +73,19 @@ workflow {
             def r1 = "${launchDir}/${row.fastq_dir}/*R1*.fastq.gz"
             def r2 = "${launchDir}/${row.fastq_dir}/*R2*.fastq.gz"
             def oligos = "${launchDir}/${row.oligos}"
-
+            
             tuple(row.sample_name, file(r1), file(r2), file(oligos), row.group)
         }
         .set { combined_ch }
+    
+    
+    trimmed_reads = ADAPTER_AND_POLY_G_TRIM(combined_ch)
 
-    trimmed_reads_and_amplicons = TRIM_AND_CREATE_AMPLICONS(combined_ch, params.method)
+    amplicons = CREATE_AMPLICONS(combined_ch, params.method)
+
+    trimmed_reads
+        .combine(amplicons, by: 0)
+        .set{trimmed_reads_and_amplicons}
 
     DIRECT_SEARCH(trimmed_reads_and_amplicons, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right)
 
