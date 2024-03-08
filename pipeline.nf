@@ -57,11 +57,26 @@ process DIRECT_SEARCH {
         val(attp_left_flank)
         val(attp_right_flank)
     output:
-        path("${sample_name}_recombination_data.csv")
+        val(sample_name), emit: sample_name
+        path("${sample_name}_recombination_data.csv"), emit: recombination_data
 
     script:
         """
         direct_search.py --fastq_file ${merged_reads} --attb_flank_left ${attb_left_flank} --attb_flank_right ${attb_right_flank} --attp_flank_left ${attp_left_flank} --attp_flank_right ${attp_right_flank} --amplicons_file ${amplicons} --sample_name ${sample_name}
+        """
+}
+
+process COLLATE_RESULTS {
+    publishDir "${params.outdir}", mode: 'copy'
+    input:
+        val(sample_names)
+        path(recombination_files)
+    output:
+        path "results.csv"
+    script:
+
+        """
+        collate_results.py -f ${recombination_files} -n ${sample_names} -o results.csv
         """
 }
 
@@ -87,7 +102,11 @@ workflow {
         .combine(amplicons, by: 0)
         .set{trimmed_reads_and_amplicons}
 
-    DIRECT_SEARCH(trimmed_reads_and_amplicons, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right)
+    recombination_files = DIRECT_SEARCH(trimmed_reads_and_amplicons, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right)
+
+    recombination_files.sample_name.collect().map { it.join(' ') }.view()
+
+    COLLATE_RESULTS(recombination_files.sample_name.collect().map { it.join(' ') },recombination_files.recombination_data.collect())
 
     // if (params.method == 'cs2') {
     //     CS2_POOLED(amplicons.amplicons, amplicons)
