@@ -2,7 +2,6 @@ nextflow.enable.dsl=2
 
 params.samplesheet = '' // Assuming you have this parameter to specify the path to the samplesheet
 params.attp_oligo = ''
-params.method = 'cs2'
 params.outdir = 'results' // Assuming an output directory parameter
 
 process ADAPTER_AND_POLY_G_TRIM {
@@ -24,29 +23,14 @@ process CREATE_AMPLICONS {
 
     input:
         tuple val(sample_name), path(R1), path(R2), path(oligos), val(group)
-        val(method)
     output:
         tuple val(sample_name), path("${sample_name}_amplicons.txt")
 
     script:
         """
-        create_amplicon_files.py --attb_list ${oligos} --attp ${params.attp_oligo} --output ${sample_name}_amplicons.txt --method ${method}
+        create_amplicon_files.py --attb_list ${oligos} --attp ${params.attp_oligo} --output ${sample_name}_amplicons.txt
         """
 }
-
-// process CS2_POOLED {
-//     input:
-//         tuple val(sample_name), path(merged_reads)
-//         path(amplicons)
-
-//     output:
-//         // Assuming there's an output you want to emit, add here
-
-//     script:
-//         """
-//         CRISPRessoPooled -r1 ${merged_reads} -f ${amplicons} --min_reads_to_use_region 1  -p 8 -o ./ -n ${sample_name} --write_detailed_allele_table --bam_output --place_report_in_output_folder --suppress_report --suppress_plots --limit_open_files_for_demux
-//         """
-// }
 
 process DIRECT_SEARCH {
     publishDir "${params.outdir}/${sample_name}", mode: 'copy'
@@ -96,7 +80,7 @@ workflow {
 
     trimmed_reads = ADAPTER_AND_POLY_G_TRIM(combined_ch)
 
-    amplicons = CREATE_AMPLICONS(combined_ch, params.method)
+    amplicons = CREATE_AMPLICONS(combined_ch)
 
     trimmed_reads
         .combine(amplicons, by: 0)
@@ -107,12 +91,6 @@ workflow {
     recombination_files.sample_name.collect().map { it.join(' ') }.view()
 
     COLLATE_RESULTS(recombination_files.sample_name.collect().map { it.join(' ') },recombination_files.recombination_data.collect())
-
-    // if (params.method == 'cs2') {
-    //     CS2_POOLED(amplicons.amplicons, amplicons)
-    // } else {
-    //     DIRECT_SEARCH(trimmed_reads, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right, amplicons)
-    // }
 }
 
 workflow.onComplete {
