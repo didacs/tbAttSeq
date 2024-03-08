@@ -55,12 +55,11 @@ def process_fastq(file, attb_flanks_left, attb_flanks_right,attp_flanks_left, at
 def cross_reference_amplicons(sequences, amplicons_file):
     amplicons = pd.read_csv(amplicons_file, sep="\t", names=["name", "sequence"])
     amplicons["count"] = amplicons["sequence"].map(sequences).fillna(0)
-    print(amplicons)
     return amplicons
 
 def calculate_recombination_percentage(amplicons, sample_name):
     recombination_data = []
-    for index in amplicons['name'].str.extract(r'_(\d+)')[0].unique():
+    for index in amplicons['name'].str.extract(r'_(.+)')[0].unique():
         subset = amplicons[amplicons['name'].apply(lambda x: x.count('_') <= 1) & amplicons['name'].str.contains(f'_{index}$')]
         attL_count = subset[subset['name'].str.contains('attL')]['count'].sum()
         attR_count = subset[subset['name'].str.contains('attR')]['count'].sum()
@@ -69,14 +68,14 @@ def calculate_recombination_percentage(amplicons, sample_name):
         max_l_r = max(attL_count, attR_count)
         recombination_percentage = 100 * max_l_r / (max_l_r + attB_count) if (max_l_r + attB_count) != 0 else 0
         recombination_data.append({
-            "index": index, 
-            "attB_sequence": attB_sequence, 
-            "attL_count": attL_count, 
-            "attR_count": attR_count, 
-            "attB_count": attB_count, 
+            "index": index,
+            "attB_sequence": attB_sequence,
+            "attL_count": attL_count,
+            "attR_count": attR_count,
+            "attB_count": attB_count,
             "recombination %": recombination_percentage
         })
-    
+
     recombination_data_df = pd.DataFrame(recombination_data)
 
     recombination_data_df.to_csv(f'{sample_name}_recombination_data.csv',index=False)
@@ -97,7 +96,6 @@ def main():
     sequences = process_fastq(args.fastq_file, args.attb_flank_left, args.attb_flank_right,args.attp_flank_left, args.attp_flank_right)
     amplicons = cross_reference_amplicons(sequences, args.amplicons_file)
     recombination = calculate_recombination_percentage(amplicons, args.sample_name)
-    print(recombination)
 
 if __name__ == "__main__":
     main()

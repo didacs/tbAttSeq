@@ -7,7 +7,6 @@ def parse_arguments():
     parser.add_argument('--attb_list', type=str, help='Path to the input CSV file')
     parser.add_argument('--attp', type=str, help='Path to the attP oligo fasta file.')
     parser.add_argument('--output', type=str, help='Path to the output FASTA file')
-    parser.add_argument('--method', type=str, help='method (cs2 or direct)')
     return parser.parse_args()
 
 def replace_sequence(original, replacement, target):
@@ -16,7 +15,7 @@ def replace_sequence(original, replacement, target):
         return target  # Original sequence not found
     return target[:position] + replacement + target[position + len(original):]
 
-def generate_fasta(df, fasta_file, attp_oligo_fn, method):
+def generate_fasta(df, fasta_file, attp_oligo_fn):
 
     attL_dict = {}
     attR_dict = {}
@@ -24,6 +23,7 @@ def generate_fasta(df, fasta_file, attp_oligo_fn, method):
 
     for i, row in df.iterrows():
         seq = row['sequence'].upper()
+        name = row['name']
         seq_5 = seq[0:24]
         seq_3 = seq[24:]
 
@@ -31,9 +31,11 @@ def generate_fasta(df, fasta_file, attp_oligo_fn, method):
         attL = seq_5 + "CTCAGTGGTGTACGGTACAAACCCA"
         attR = "GTGGTTTGTCTGGTCAACCACCGCGGT" + seq_3
 
-        attB_dict.setdefault(attB, []).append(i)
-        attL_dict.setdefault(attL, []).append(i)
-        attR_dict.setdefault(attR, []).append(i)
+        attB_dict.setdefault(attB, []).append(name)
+        attL_dict.setdefault(attL, []).append(name)
+        attR_dict.setdefault(attR, []).append(name)
+
+        print(attB_dict)
 
     with open(fasta_file, 'w') as outfile:
         for attB, indices in attB_dict.items():
@@ -52,7 +54,7 @@ if __name__ == "__main__":
     args = parse_arguments()
     input_df = pd.read_csv(args.attb_list)
     input_df['sequence'] = input_df['sequence'].str.upper()
-    input_df['oligo'] = input_df['oligo'].str.upper()
+    input_df['name'] = input_df['name'].str.upper()
     input_df = input_df.drop_duplicates()
-    generate_fasta(input_df, args.output, args.attp, args.method)
+    generate_fasta(input_df, args.output, args.attp)
 
