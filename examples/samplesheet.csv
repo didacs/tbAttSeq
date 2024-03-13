@@ -1,7 +1,9 @@
 sample_name,fastq_dir,oligos,group
-0min,input/reads/NC_L001_ds.8fb467e600244c8b82697406fcf61202,input/oligos.csv,0min
-5min,input/reads/5min_L001_ds.c47a5dee44a1460c9776f7032ada3824,input/oligos.csv,5min
-15min,input/reads/15min_L001_ds.3a8c967d007946b6a4974aa162138949,input/oligos.csv,15min
-30min,input/reads/30min_L001_ds.487b72db1e254ce58851bfa464867350,input/oligos.csv,30min
-45min,input/reads/45min_L001_ds.0e45a95f0d5041b68bd02f79f9dcd02c,input/oligos.csv,45min
-60min,input/reads/60min_L001_ds.6b37bce364ac4994bd84a4ea5fd24ed6,input/oligos.csv,60min
+NC,input/reads/NC*,input/oligos.csv,NC
+WT,input/reads/WT*,input/oligos.csv,WT
+PL1750,input/reads/PL1750*,input/oligos.csv,PL1750
+PL1768,input/reads/PL1768*,input/oligos.csv,PL1768
+PL2412,input/reads/PL2412*,input/oligos.csv,PL2412
+PL2421,input/reads/PL2421*,input/oligos.csv,PL2421
+PL2648,input/reads/PL2648*,input/oligos.csv,PL2648
+
