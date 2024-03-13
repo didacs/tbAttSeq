@@ -10,7 +10,8 @@ process ADAPTER_AND_POLY_G_TRIM {
     input:
         tuple val(sample_name), path(R1), path(R2), path(oligos), val(group)
     output:
-        tuple val(sample_name), path("${sample_name}_trimmed.fastq.gz")
+        tuple val(sample_name), path("${sample_name}_trimmed.fastq.gz"), emit: fastq
+        path("${sample_name}_fastp.json"), emit: fastp_stats
 
     script:
         """
@@ -58,10 +59,23 @@ process COLLATE_RESULTS {
     output:
         path "results.csv"
     script:
-
         """
         collate_results.py -f ${recombination_files} -n ${sample_names} -o results.csv
         """
+}
+
+process MULTIQC {
+    cache 'lenient'
+    publishDir "${params.outdir}", mode: 'copy'
+    input:
+        path fastp_jsons
+    output:
+        file "multiqc_report.html"
+        file "multiqc_data"
+    script:
+    """
+        multiqc .
+    """
 }
 
 workflow {
@@ -82,7 +96,7 @@ workflow {
 
     amplicons = CREATE_AMPLICONS(combined_ch)
 
-    trimmed_reads
+    trimmed_reads.fastq
         .combine(amplicons, by: 0)
         .set{trimmed_reads_and_amplicons}
 
@@ -91,6 +105,12 @@ workflow {
     recombination_files.sample_name.collect().map { it.join(' ') }.view()
 
     COLLATE_RESULTS(recombination_files.sample_name.collect().map { it.join(' ') },recombination_files.recombination_data.collect())
+
+    MULTIQC(trimmed_reads.fastp_stats
+            .flatten()  // Flatten the list
+            .filter { it.toString().endsWith('.json') }  // Filter out only the paths ending with .json
+            .collect()
+            .ifEmpty([]))
 }
 
 workflow.onComplete {
