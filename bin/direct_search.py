@@ -14,10 +14,10 @@ def reverse_complement(seq):
 def find_sequence(sequence, flanks_left, flanks_right):
     flank_combos = list(itertools.product(flanks_left,flanks_right))
     for flank_combo in flank_combos:
-        left_index = sequence.find(flank_combo[0])
-        right_index = sequence.find(flank_combo[1], left_index + 1)
+        left_index = sequence.find(flank_combo[0][-11:])
+        right_index = sequence.find(flank_combo[1][:11], left_index + 1)
         if left_index != -1 and right_index != -1:
-            return sequence[left_index + len(flank_combo[0]):right_index]
+            return sequence[left_index + len(flank_combo[0][-11:]):right_index]
     return None
 
 def process_fastq(file, attb_flanks_left, attb_flanks_right,attp_flanks_left, attp_flanks_right):
