@@ -10,3 +10,6 @@ dependencies:
   - fastp
   - multiqc
   - nextflow
+  - samtools=1.17
+  - bwa=0.7.17
+  - htseq=2.0.5

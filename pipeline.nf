@@ -33,6 +33,38 @@ process CREATE_AMPLICONS {
         """
 }
 
+process CREATE_OLIGOS_REF {
+    input:
+        path oligos_path
+        val attb_flank_left
+        val attb_flank_right
+    output:
+        path "oligos.fa"
+    script:
+        """
+        create_oligo_fasta.py \
+            --attb_oligos ${oligos_path} \
+            --attb_flank_left ${attb_flank_left} \
+            --attb_flank_right ${attb_flank_right} \
+            --output_fasta oligos.fa && \
+        bwa index oligos.fa
+        """
+}
+
+process ALIGN_READS_TO_OLIGOS {
+    input:
+        tuple val(sample_name), path(trimmed_reads)
+        val oligos_ref
+    output:
+        tuple val(sample_name), path("${sample_name}.align_reads_to_oligos.bam")
+    script:
+    """
+    bwa mem -p ${oligos_ref} ${trimmed_reads} |\
+        samtools view -b |\
+        samtools sort --write-index -o ${sample_name}.align_reads_to_oligos.bam
+    """
+}
+
 process DIRECT_SEARCH {
     publishDir "${params.outdir}/${sample_name}", mode: 'copy'
     input:
@@ -91,10 +123,18 @@ workflow {
         }
         .set { combined_ch }
 
-
     trimmed_reads = ADAPTER_AND_POLY_G_TRIM(combined_ch)
 
     amplicons = CREATE_AMPLICONS(combined_ch)
+
+    // Create reference from oligos to align reads
+    create_oligo_ref_ch = Channel.fromPath(params.oligos_path)
+    oligos_ref = CREATE_OLIGOS_REF(create_oligo_ref_ch, params.oligo_attb_flank_left, params.oligo_attb_flank_right)
+
+    // align reads to oligos (substrates)
+    aligned_bam = ALIGN_READS_TO_OLIGOS(trimmed_reads.fastq, oligos_ref.first())
+
+    // TODO: add DSB detection
 
     trimmed_reads.fastq
         .combine(amplicons, by: 0)
