@@ -39,7 +39,8 @@ process CREATE_OLIGOS_REF {
         val attb_flank_left
         val attb_flank_right
     output:
-        path "oligos.fa"
+        path "oligos.fa", emit: index
+        path "oligos.fa.{amb,ann,bwt,pac,sa}", emit: ref_files
     script:
         """
         create_oligo_fasta.py \
@@ -54,16 +55,34 @@ process CREATE_OLIGOS_REF {
 process ALIGN_READS_TO_OLIGOS {
     input:
         tuple val(sample_name), path(trimmed_reads)
-        val oligos_ref
+        path oligos_index
+        path oligos_ref_files
     output:
         tuple val(sample_name), path("${sample_name}.align_reads_to_oligos.bam")
     script:
     """
-    bwa mem -p ${oligos_ref} ${trimmed_reads} |\
+    bwa mem -p ${oligos_index} ${trimmed_reads} |\
         samtools view -b |\
         samtools sort --write-index -o ${sample_name}.align_reads_to_oligos.bam
     """
 }
+
+process DETECT_DSB {
+    publishDir "${params.outdir}/${sample_name}", mode: "copy"
+    input:
+        tuple val(sample_name), path(aligned_bam)
+    output:
+        path "${sample_name}.dsb_counts.csv"
+        path "${sample_name}.read_boundaries.csv"
+    script:
+    """
+    dsb_quantification.py \
+        --sample_name ${sample_name} \
+        --bam ${aligned_bam} \
+        --dinucleotide_position 44
+    """
+}
+
 
 process DIRECT_SEARCH {
     publishDir "${params.outdir}/${sample_name}", mode: 'copy'
@@ -127,14 +146,15 @@ workflow {
 
     amplicons = CREATE_AMPLICONS(combined_ch)
 
-    // Create reference from oligos to align reads
+    // Create reference from oligos
     create_oligo_ref_ch = Channel.fromPath(params.oligos_path)
     oligos_ref = CREATE_OLIGOS_REF(create_oligo_ref_ch, params.oligo_attb_flank_left, params.oligo_attb_flank_right)
 
     // align reads to oligos (substrates)
-    aligned_bam = ALIGN_READS_TO_OLIGOS(trimmed_reads.fastq, oligos_ref.first())
+    aligned_bam = ALIGN_READS_TO_OLIGOS(trimmed_reads.fastq, oligos_ref.index.first(), oligos_ref.ref_files.first())
 
-    // TODO: add DSB detection
+    // DSB detection
+    DETECT_DSB(aligned_bam)
 
     trimmed_reads.fastq
         .combine(amplicons, by: 0)
