@@ -20,9 +20,12 @@ def parse_arguments():
 
 def parse_bam(bam, min_mapq, dinucleotide_position):
     """
-    Reads the bam file, finds start and end positions of unclipped reads, and
-    quantifies number of reads with start or end within a 6bp quantification window
-    centered around the dinucleotide.
+    Parses the bam file, filters unclipped reads (no soft-clipped bases at either end),
+    and stores start and end positions.
+
+    It then quantifies number of reads that start or end within a 6 bp quantification window
+    centered around the dinucleotide. Reads that end within the quantification window support a left fragment,
+    and reads that start within the quantification window support right fragment.
 
     Args:
         bam: alignment file of reads mapped against unrecombined substrate sequences
@@ -80,7 +83,7 @@ def parse_bam(bam, min_mapq, dinucleotide_position):
         for _, counts in unclipped_start[iv].steps():
             support_dsb_right[chrom] += int(counts)
 
-    # {sample_name}.dsb_counts.csv:
+    # {sample_name}.dsb_counts.csv
     # name, total_reads, unclipped, quant_window, support_dsb_left, support_dsb_right, support_dsb_%
     total_reads = pd.DataFrame.from_dict(total_reads, orient='index', columns=['total_reads']).reset_index()
     total_unclipped = pd.DataFrame.from_dict(total_unclipped, orient='index', columns=['unclipped']).reset_index()
@@ -106,8 +109,8 @@ def parse_bam(bam, min_mapq, dinucleotide_position):
                     'chrom': iiv.chrom,
                     'start': iiv.start + 1,  # make it 1-based
                     'fraction_unclipped': unclipped / total_coverage,
-                    'unclipped': unclipped,
-                    'total_coverage': total_coverage,
+                    'unclipped': int(unclipped),
+                    'total_coverage': int(total_coverage),
                 })
     df_bounds = pd.DataFrame(l)
     
@@ -119,7 +122,7 @@ if __name__ == "__main__":
     df_dsb, df_bounds = parse_bam(args.bam, args.min_mapq, args.dinucleotide_position)
     # save DSB table
     dsb_outfile = f"{args.sample_name}.dsb_counts.csv"
-    df_dsb.to_string(dsb_outfile, index=0)
+    df_dsb.to_csv(dsb_outfile, index=0)
     # save read boundaries table
     bounds_outfile = f"{args.sample_name}.read_boundaries.csv"
-    df_bounds.to_string(bounds_outfile, index=0)
+    df_bounds.to_csv(bounds_outfile, index=0)
