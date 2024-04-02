@@ -84,7 +84,7 @@ process ALIGN_READS_TO_OLIGOS {
     script:
     """
     bwa index ${fasta} && \
-    bwa mem -p ${fasta} ${merged_reads} |\
+    bwa mem ${fasta} ${merged_reads} |\
         samtools view -b |\
         samtools sort --write-index -o ${sample_name}.align_reads_to_oligos.bam
     """
