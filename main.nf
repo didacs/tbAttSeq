@@ -157,8 +157,8 @@ workflow {
     Channel.fromPath(params.samplesheet)
         .splitCsv(header: true, sep: ',')
         .map { row ->
-            def r1 = "${launchDir}/${row.fastq_dir}/*R1*.fastq.gz"
-            def r2 = "${launchDir}/${row.fastq_dir}/*R2*.fastq.gz"
+            def r1 = "${launchDir}/${row.fastq_dir}/*_R1_*.fastq.gz"
+            def r2 = "${launchDir}/${row.fastq_dir}/*_R2_*.fastq.gz"
             def oligos = "${launchDir}/${row.oligos}"
 
             tuple(row.sample_name, file(r1), file(r2), file(oligos), row.group)
