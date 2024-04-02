@@ -4,6 +4,10 @@ params.samplesheet = '' // Assuming you have this parameter to specify the path 
 params.attp_oligo = ''
 params.outdir = 'results' // Assuming an output directory parameter
 
+params.adapter_sequence = 'AGATCGGAAGAGCACACGTCTGAACTCCAGTCA'
+params.adapter_sequence_r2 = 'AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT'
+params.dinucleotide_position = null
+
 process ADAPTER_AND_POLY_G_TRIM {
     cache 'lenient'
 
@@ -14,8 +18,30 @@ process ADAPTER_AND_POLY_G_TRIM {
         path("${sample_name}_fastp.json"), emit: fastp_stats
 
     script:
+        def adapter_sequence = ""
+        if (params.adapter_sequence != null) {
+            adapter_sequence = "--adapter_sequence ${params.adapter_sequence}"
+        }
+        def adapter_sequence_r2 = ""
+        if (params.adapter_sequence_r2 != null) {
+            adapter_sequence_r2 = "--adapter_sequence_r2 ${params.adapter_sequence_r2}"
+        }
+
         """
-        fastp -m -c --include_unmerged --dont_eval_duplication --low_complexity_filter --overlap_len_require 10 -i ${R1} -I ${R2} --merged_out ${sample_name}_trimmed.fastq.gz -w 16 -g -j ${sample_name}_fastp.json
+        fastp \
+            --merge \
+            --correction \
+            --include_unmerged \
+            --dont_eval_duplication \
+            --low_complexity_filter \
+            --overlap_len_require 10 \
+            -i ${R1} \
+            -I ${R2} \
+            --merged_out ${sample_name}_trimmed.fastq.gz \
+            --thread 16 \
+            --trim_poly_g \
+            -j ${sample_name}_fastp.json \
+            ${adapter_sequence} ${adapter_sequence_r2}
         """
 }
 
@@ -33,35 +59,32 @@ process CREATE_AMPLICONS {
         """
 }
 
-process CREATE_OLIGOS_REF {
+process CREATE_OLIGOS_FASTA {
     input:
-        path oligos_path
+        tuple val(sample_name), path(R1), path(R2), path(oligos), val(group)
         val attb_flank_left
         val attb_flank_right
     output:
-        path "oligos.fa", emit: index
-        path "oligos.fa.{amb,ann,bwt,pac,sa}", emit: ref_files
+        tuple val(sample_name), path("${sample_name}.oligos.fa")
     script:
         """
         create_oligo_fasta.py \
-            --attb_oligos ${oligos_path} \
+            --attb_oligos ${oligos} \
             --attb_flank_left ${attb_flank_left} \
             --attb_flank_right ${attb_flank_right} \
-            --output_fasta oligos.fa && \
-        bwa index oligos.fa
+            --output_fasta ${sample_name}.oligos.fa
         """
 }
 
 process ALIGN_READS_TO_OLIGOS {
     input:
-        tuple val(sample_name), path(trimmed_reads)
-        path oligos_index
-        path oligos_ref_files
+        tuple val(sample_name), path(merged_reads), path(fasta)
     output:
         tuple val(sample_name), path("${sample_name}.align_reads_to_oligos.bam")
     script:
     """
-    bwa mem -p ${oligos_index} ${trimmed_reads} |\
+    bwa index ${fasta} && \
+    bwa mem ${fasta} ${merged_reads} |\
         samtools view -b |\
         samtools sort --write-index -o ${sample_name}.align_reads_to_oligos.bam
     """
@@ -79,7 +102,7 @@ process DETECT_DSB {
     dsb_quantification.py \
         --sample_name ${sample_name} \
         --bam ${aligned_bam} \
-        --dinucleotide_position 44
+        --dinucleotide_position ${params.dinucleotide_position}
     """
 }
 
@@ -142,16 +165,21 @@ workflow {
         }
         .set { combined_ch }
 
+    // trim reads (adapter, poly G) and merge
     trimmed_reads = ADAPTER_AND_POLY_G_TRIM(combined_ch)
 
+    // create amplicons: attB, attL, attR
     amplicons = CREATE_AMPLICONS(combined_ch)
 
-    // Create reference from oligos
-    create_oligo_ref_ch = Channel.fromPath(params.oligos_path)
-    oligos_ref = CREATE_OLIGOS_REF(create_oligo_ref_ch, params.oligo_attb_flank_left, params.oligo_attb_flank_right)
+    // create fasta from oligos
+    oligos_fasta = CREATE_OLIGOS_FASTA(combined_ch, params.oligo_attb_flank_left, params.oligo_attb_flank_right)
 
-    // align reads to oligos (substrates)
-    aligned_bam = ALIGN_READS_TO_OLIGOS(trimmed_reads.fastq, oligos_ref.index.first(), oligos_ref.ref_files.first())
+    trimmed_reads.fastq
+        .combine(oligos_fasta, by: 0)
+        .set{trimmed_reads_and_fasta}
+
+    // index fasta and align reads to oligos (substrates)
+    aligned_bam = ALIGN_READS_TO_OLIGOS(trimmed_reads_and_fasta)
 
     // DSB detection
     DETECT_DSB(aligned_bam)
@@ -160,10 +188,12 @@ workflow {
         .combine(amplicons, by: 0)
         .set{trimmed_reads_and_amplicons}
 
+    // direct search to quantify amplicons
     recombination_files = DIRECT_SEARCH(trimmed_reads_and_amplicons, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right)
 
     recombination_files.sample_name.collect().map { it.join(' ') }.view()
 
+    // collate results into a single table
     COLLATE_RESULTS(recombination_files.sample_name.collect().map { it.join(' ') },recombination_files.recombination_data.collect())
 
     MULTIQC(trimmed_reads.fastp_stats

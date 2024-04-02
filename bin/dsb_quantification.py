@@ -14,7 +14,7 @@ def parse_arguments():
     parser.add_argument('--bam', help='input bam file', required=True)
     parser.add_argument('--min_mapq', help='minimum read mapq value', default=30)
     parser.add_argument('--dinucleotide_position',
-                        help='position of dinucleotide in all oligos, 1-based', required=True, type=int)
+                        help='position of dinucleotide, 1-based (assumes the same position for all oligos)', required=True, type=int)
     return parser.parse_args()
 
 
