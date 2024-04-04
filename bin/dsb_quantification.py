@@ -18,7 +18,7 @@ def parse_arguments():
     return parser.parse_args()
 
 
-def parse_bam(bam, min_mapq, dinucleotide_position):
+def parse_bam(sample_name, bam, min_mapq, dinucleotide_position):
     """
     Parses the bam file, filters unclipped reads (no soft-clipped bases at either end),
     and stores start and end positions.
@@ -84,7 +84,7 @@ def parse_bam(bam, min_mapq, dinucleotide_position):
             support_dsb_right[chrom] += int(counts)
 
     # {sample_name}.dsb_counts.csv
-    # name, total_reads, unclipped, quant_window, support_dsb_left, support_dsb_right, support_dsb_%
+    # sample_name, index, total_reads, unclipped, quant_window, support_dsb_left, support_dsb_right, support_dsb_%
     total_reads = pd.DataFrame.from_dict(total_reads, orient='index', columns=['total_reads']).reset_index()
     total_unclipped = pd.DataFrame.from_dict(total_unclipped, orient='index', columns=['unclipped']).reset_index()
     support_dsb_left = pd.DataFrame.from_dict(support_dsb_left, orient='index',
@@ -97,6 +97,7 @@ def parse_bam(bam, min_mapq, dinucleotide_position):
     df_dsb = pd.merge(df_dsb, support_dsb_right)
     df_dsb['support_dsb_total'] = df_dsb['support_dsb_left'] + df_dsb['support_dsb_right']
     df_dsb['support_dsb_%'] = df_dsb.apply(lambda x: x.support_dsb_total / x.total_reads * 100, axis=1)
+    df_dsb.insert(0, 'sample_name', sample_name)
 
     # {sample_name}.read_boundaries.csv:
     # Number of unclipped reads starting or ending at each position along oligos
@@ -119,7 +120,7 @@ def parse_bam(bam, min_mapq, dinucleotide_position):
 
 if __name__ == "__main__":
     args = parse_arguments()
-    df_dsb, df_bounds = parse_bam(args.bam, args.min_mapq, args.dinucleotide_position)
+    df_dsb, df_bounds = parse_bam(args.sample_name, args.bam, args.min_mapq, args.dinucleotide_position)
     # save DSB table
     dsb_outfile = f"{args.sample_name}.dsb_counts.csv"
     df_dsb.to_csv(dsb_outfile, index=0)
