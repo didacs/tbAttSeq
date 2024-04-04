@@ -95,14 +95,29 @@ process DETECT_DSB {
     input:
         tuple val(sample_name), path(aligned_bam)
     output:
-        path "${sample_name}.dsb_counts.csv"
-        path "${sample_name}.read_boundaries.csv"
+        path "${sample_name}.dsb_counts.csv", emit: dsb_counts
+        path "${sample_name}.read_boundaries.csv", emit: read_boundaries
     script:
     """
     dsb_quantification.py \
         --sample_name ${sample_name} \
         --bam ${aligned_bam} \
         --dinucleotide_position ${params.dinucleotide_position}
+    """
+}
+
+process DSB_COLLATE_RESULTS {
+    publishDir "${params.outdir}", mode: 'copy'
+
+    input:
+        path dsb_counts
+    output:
+        path "dsb_results.csv"
+    script:
+    """
+    dsb_collate_results.py \
+        --dsb_counts ${dsb_counts} \
+        --output dsb_results.csv
     """
 }
 
@@ -182,7 +197,11 @@ workflow {
     aligned_bam = ALIGN_READS_TO_OLIGOS(trimmed_reads_and_fasta)
 
     // DSB detection
-    DETECT_DSB(aligned_bam)
+    dsb = DETECT_DSB(aligned_bam)
+
+    // collate DSB results
+    DSB_COLLATE_RESULTS(dsb.dsb_counts.collect())
+
 
     trimmed_reads.fastq
         .combine(amplicons, by: 0)
@@ -191,10 +210,10 @@ workflow {
     // direct search to quantify amplicons
     recombination_files = DIRECT_SEARCH(trimmed_reads_and_amplicons, params.attb_flank_left, params.attb_flank_right, params.attp_flank_left, params.attp_flank_right)
 
-    recombination_files.sample_name.collect().map { it.join(' ') }.view()
 
     // collate results into a single table
-    COLLATE_RESULTS(recombination_files.sample_name.collect().map { it.join(' ') },recombination_files.recombination_data.collect())
+    COLLATE_RESULTS(recombination_files.sample_name.collect().map { it.join(' ') },
+                    recombination_files.recombination_data.collect())
 
     MULTIQC(trimmed_reads.fastp_stats
             .flatten()  // Flatten the list
